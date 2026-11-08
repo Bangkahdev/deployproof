@@ -98,31 +98,13 @@ Webhook → logs sanitized and trimmed → `AI_ANALYSIS` job → Gemini → vali
 
 - **Backend**: Node.js 20+, Express, TypeScript, Prisma (SQLite), Zod
 - **Blockchain**: @solana/web3.js v1, Solana Devnet Memo program
-- **AI**: @google/generative-ai, Gemini 3.5 Flash-Lite
+- **AI**: Gemini API (REST `generateContent` via native fetch), model `gemini-3.5-flash-lite`
 - **Frontend**: React 18, Vite, Tailwind CSS 4, React Router 6
 - **Testing**: Vitest (backend)
 
 ## Screenshots
 
-### Dashboard
-
-![Dashboard Screenshot](docs/screenshots/dashboard.png)
-
-### Deployments
-
-![Deployments Screenshot](docs/screenshots/deployments.png)
-
-### Deployment Detail
-
-![Deployment Detail Screenshot](docs/screenshots/deployment-detail.png)
-
-### Public Verifier
-
-![Verifier Screenshot](docs/screenshots/verifier.png)
-
-### Settings
-
-![Settings Screenshot](docs/screenshots/settings.png)
+Capture the dashboard, deployments, detail, verifier, and settings views before submission and place them under `docs/screenshots/`. See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for the capture checklist and naming guide.
 
 ## Getting Started
 
