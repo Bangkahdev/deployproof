@@ -86,32 +86,39 @@ jobs:
               -H "x-webhook-secret: $DP_SECRET" \
               --data-binary @-
 
-# --- Report failure (runs even though earlier steps failed) ---
+      # --- Report failure (runs even though earlier steps failed) ---
       - name: Collect failure logs
         if: always()
         shell: bash
         run: |
+          echo "CHECKOUT_OUTCOME=${{ steps.checkout.outcome }}"
+          echo "SETUP_NODE_OUTCOME=${{ steps.setup-node.outcome }}"
           echo "BUILD_OUTCOME=${{ steps.build.outcome }}"
           echo "HASH_OUTCOME=${{ steps.hash.outcome }}"
           echo "UPLOAD_OUTCOME=${{ steps.upload.outcome }}"
-          LOGS=$(cat build.log package.log 2>/dev/null | tail -n 200 | sed -E 's/(token|secret|password|api[_-]?key)[=:][^ ]+/\1=[REDACTED]/Ig')
-          echo "LOGS=$LOGS" >> /tmp/failure-logs.txt
 
       - name: Send failure webhook
-        if: always() && (steps.build.outcome == 'failure' || steps.hash.outcome == 'failure' || steps.upload.outcome == 'failure')
+        if: always() && (steps.checkout.outcome == 'failure' || steps.setup-node.outcome == 'failure' || steps.build.outcome == 'failure' || steps.hash.outcome == 'failure' || steps.upload.outcome == 'failure')
         shell: bash
         env:
           DP_URL: ${{ secrets.DEPLOYPROOF_URL }}
           DP_SECRET: ${{ secrets.DEPLOYPROOF_WEBHOOK_SECRET }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          SETUP_NODE_OUTCOME: ${{ steps.setup-node.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          HASH_OUTCOME: ${{ steps.hash.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
         run: |
           LOGS=$(cat build.log package.log 2>/dev/null | tail -n 200 | sed -E 's/(token|secret|password|api[_-]?key)[=:][^ ]+/\1=[REDACTED]/Ig')
+          CONTEXT="checkout=$CHECKOUT_OUTCOME setup-node=$SETUP_NODE_OUTCOME build=$BUILD_OUTCOME hash=$HASH_OUTCOME upload=$UPLOAD_OUTCOME"
+          BODY=$(printf '%s\n\n%s' "$CONTEXT" "$LOGS")
           jq -n \
             --arg repo "$GITHUB_REPOSITORY" \
             --arg commit "$GITHUB_SHA" \
             --arg runId "$GITHUB_RUN_ID" \
             --argjson attempt "$GITHUB_RUN_ATTEMPT" \
             --arg url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --arg logs "$LOGS" \
+            --arg logs "$BODY" \
             '{repo:$repo, commit:$commit, status:"failure", workflowRunId:$runId, runAttempt:$attempt, workflowUrl:$url, logs:$logs}' \
             | curl -sS --fail-with-body -X POST "$DP_URL/api/webhook/deployment" \
                -H "Content-Type: application/json" \
@@ -120,5 +127,5 @@ jobs:
 
       # --- The job must stay failed if the build failed ---
       - name: Fail the job if the build failed
-        if: always() && (steps.build.outcome == 'failure' || steps.hash.outcome == 'failure' || steps.upload.outcome == 'failure')
+        if: always() && (steps.checkout.outcome == 'failure' || steps.setup-node.outcome == 'failure' || steps.build.outcome == 'failure' || steps.hash.outcome == 'failure' || steps.upload.outcome == 'failure')
         run: exit 1

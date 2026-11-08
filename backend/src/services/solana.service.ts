@@ -21,12 +21,23 @@ import {
 } from '../utils/memo';
 
 export const connection = new Connection(env.SOLANA_RPC_URL, 'confirmed');
+export const DEVNET_GENESIS_HASH = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
+
 // The ONLY place the private key is loaded (NFR-SEC-01).
 const payer = Keypair.fromSecretKey(Buffer.from(env.SOLANA_PRIVATE_KEY_BASE64, 'base64'));
 const memoProgram = new PublicKey(MEMO_PROGRAM_ID);
 
 export const walletAddress = payer.publicKey.toBase58();
 const MIN_LAMPORTS = 10_000; // tx fee is 5000 lamports
+
+export async function assertDevnet(): Promise<void> {
+  const genesisHash = await connection.getGenesisHash();
+  if (genesisHash !== DEVNET_GENESIS_HASH) {
+    throw new Error(
+      `SOLANA_RPC_URL is not connected to Solana Devnet (genesis ${genesisHash}); expected ${DEVNET_GENESIS_HASH}`,
+    );
+  }
+}
 
 // Signers whose memos count as "recorded by DeployProof": the current wallet plus optional older wallets.
 const trustedSigners = new Set<string>([
