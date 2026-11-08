@@ -1,0 +1,124 @@
+# Copy to .github/workflows/deployproof.yml in YOUR repository and adapt the build steps.
+#
+# Required repository secrets:
+#   DEPLOYPROOF_URL             e.g. https://deployproof.example.com   (public HTTPS backend, no trailing slash)
+#   DEPLOYPROOF_WEBHOOK_SECRET  must equal WEBHOOK_SECRET on the backend
+#
+# This workflow never touches a Solana wallet. The backend alone signs transactions.
+name: DeployProof
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        id: checkout
+
+      - uses: actions/setup-node@v4
+        id: setup-node
+        with:
+          node-version: 20
+          cache: npm
+
+      # --- Build + test. Output is captured so a failure can be reported. ---
+      - name: Install, build and test
+        id: build
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            npm ci
+            npm run build --if-present
+            npm test --if-present
+          } 2>&1 | tee build.log
+
+      # --- Package the artifact that was actually produced and hash it. ---
+      - name: Package artifact and compute SHA-256
+        id: hash
+        if: steps.build.outcome == 'success'
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            # Adapt: package whatever your build outputs (dist/, build/, a binary...)
+            test -d dist || { echo "No dist/ directory produced"; exit 1; }
+            # -X and a sorted file list make the zip content more stable (not a reproducible-build guarantee)
+            (cd dist && find . -type f | LC_ALL=C sort | zip -X -q ../dist.zip -@)
+            HASH=$(sha256sum dist.zip | cut -d' ' -f1)
+            echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+            echo "SHA-256: $HASH"
+          } 2>&1 | tee package.log
+
+      - uses: actions/upload-artifact@v4
+        id: upload
+        if: steps.hash.outcome == 'success'
+        with:
+          name: dist
+          path: dist.zip
+
+      # --- Report success ---
+      - name: Send success webhook
+        if: steps.build.outcome == 'success' && steps.hash.outcome == 'success'
+        shell: bash
+        env:
+          DP_URL: ${{ secrets.DEPLOYPROOF_URL }}
+          DP_SECRET: ${{ secrets.DEPLOYPROOF_WEBHOOK_SECRET }}
+          BUILD_HASH: ${{ steps.hash.outputs.hash }}
+        run: |
+          jq -n \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg commit "$GITHUB_SHA" \
+            --arg buildHash "$BUILD_HASH" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --argjson attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{repo:$repo, commit:$commit, buildHash:$buildHash, status:"success", workflowRunId:$runId, runAttempt:$attempt, workflowUrl:$url}' \
+          | curl -sS --fail-with-body -X POST "$DP_URL/api/webhook/deployment" \
+              -H "Content-Type: application/json" \
+              -H "x-webhook-secret: $DP_SECRET" \
+              --data-binary @-
+
+# --- Report failure (runs even though earlier steps failed) ---
+      - name: Collect failure logs
+        if: always()
+        shell: bash
+        run: |
+          echo "BUILD_OUTCOME=${{ steps.build.outcome }}"
+          echo "HASH_OUTCOME=${{ steps.hash.outcome }}"
+          echo "UPLOAD_OUTCOME=${{ steps.upload.outcome }}"
+          LOGS=$(cat build.log package.log 2>/dev/null | tail -n 200 | sed -E 's/(token|secret|password|api[_-]?key)[=:][^ ]+/\1=[REDACTED]/Ig')
+          echo "LOGS=$LOGS" >> /tmp/failure-logs.txt
+
+      - name: Send failure webhook
+        if: always() && (steps.build.outcome == 'failure' || steps.hash.outcome == 'failure')
+        shell: bash
+        env:
+          DP_URL: ${{ secrets.DEPLOYPROOF_URL }}
+          DP_SECRET: ${{ secrets.DEPLOYPROOF_WEBHOOK_SECRET }}
+        run: |
+          LOGS=$(cat build.log package.log 2>/dev/null | tail -n 200 | sed -E 's/(token|secret|password|api[_-]?key)[=:][^ ]+/\1=[REDACTED]/Ig')
+          jq -n \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg commit "$GITHUB_SHA" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --argjson attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg logs "$LOGS" \
+            '{repo:$repo, commit:$commit, status:"failure", workflowRunId:$runId, runAttempt:$attempt, workflowUrl:$url, logs:$logs}' \
+            | curl -sS --fail-with-body -X POST "$DP_URL/api/webhook/deployment" \
+               -H "Content-Type: application/json" \
+               -H "x-webhook-secret: $DP_SECRET" \
+               --data-binary @- || echo "DeployProof webhook failed (build status unchanged)"
+
+      # --- The job must stay failed if the build failed ---
+      - name: Fail the job if the build failed
+        if: always() && (steps.build.outcome == 'failure' || steps.hash.outcome == 'failure')
+        run: exit 1

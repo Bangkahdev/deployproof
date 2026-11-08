@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    env_file: .env # secrets go to the backend only
+    environment:
+      DATABASE_URL: file:/data/deployproof.db
+      PORT: "3000"
+      NODE_ENV: production
+      FRONTEND_URL: http://localhost:8080
+    volumes:
+      - dbdata:/data # persistent SQLite
+    ports:
+      - "3000:3000" # GitHub Actions must reach this over public HTTPS (tunnel / reverse proxy)
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  dbdata:
