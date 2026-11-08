@@ -12,7 +12,7 @@ export const health = asyncHandler(async (_req, res) => {
     withTimeout(prisma.$queryRaw`SELECT 1`, 3000).then(() => 'ok', () => 'error'),
     withTimeout(connection.getVersion(), 3000).then(() => 'ok', () => 'error'),
   ]);
-  const ok = db === 'ok';
+  const ok = db === 'ok' && rpc === 'ok';
   res.status(ok ? 200 : 503).json({
     status: ok ? 'ok' : 'degraded',
     backend: 'ok',
