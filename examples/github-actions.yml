@@ -33,7 +33,7 @@ jobs:
         id: build
         shell: bash
         run: |
-          set -o pipefail
+          set -Eeuo pipefail
           {
             npm ci
             npm run build --if-present
@@ -46,7 +46,7 @@ jobs:
         if: steps.build.outcome == 'success'
         shell: bash
         run: |
-          set -o pipefail
+          set -Eeuo pipefail
           {
             # Adapt: package whatever your build outputs (dist/, build/, a binary...)
             test -d dist || { echo "No dist/ directory produced"; exit 1; }
@@ -98,7 +98,7 @@ jobs:
           echo "LOGS=$LOGS" >> /tmp/failure-logs.txt
 
       - name: Send failure webhook
-        if: always() && (steps.build.outcome == 'failure' || steps.hash.outcome == 'failure')
+        if: always() && (steps.build.outcome == 'failure' || steps.hash.outcome == 'failure' || steps.upload.outcome == 'failure')
         shell: bash
         env:
           DP_URL: ${{ secrets.DEPLOYPROOF_URL }}
@@ -120,5 +120,5 @@ jobs:
 
       # --- The job must stay failed if the build failed ---
       - name: Fail the job if the build failed
-        if: always() && (steps.build.outcome == 'failure' || steps.hash.outcome == 'failure')
+        if: always() && (steps.build.outcome == 'failure' || steps.hash.outcome == 'failure' || steps.upload.outcome == 'failure')
         run: exit 1
